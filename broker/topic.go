@@ -1,19 +1,34 @@
 package broker
 
+import (
+	"sync"
+	"time"
+)
+
 type Topic struct {
-	Name    string
-	Message []string
+	TopicName string
+	Messages  []Message
+	mu        sync.Mutex
+}
+
+type Message struct {
+	ID        int    `json:"id"`
+	Value     string `json:"value"`
+	TimeStamp time.Time
 }
 
 func NewTopic(name string) *Topic {
 	return &Topic{
-		Name:    name,
-		Message: []string{},
+		TopicName: name,
+		Messages:  []Message{},
 	}
 }
 
 func (t *Topic) AddMessage(msg string) {
-	t.Message = append(t.Message, msg)
+	m := Message{
+		Value:     msg,
+		TimeStamp: time.Now(),
+	}
+	t.Messages = append(t.Messages, m)
+
 }
-
-
