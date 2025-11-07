@@ -9,12 +9,14 @@ import (
 
 type Broker struct {
 	Topics map[string]*Topic
+	Groups map[string]*ConsumerGroup
 	mu     sync.Mutex
 }
 
 func NewBroker() *Broker {
 	b := &Broker{
 		Topics: make(map[string]*Topic),
+		Groups: make(map[string]*ConsumerGroup),
 	}
 	b.LoadAllTopics()
 	return b
@@ -63,6 +65,21 @@ func (b *Broker) GetOrCreateTopic(topicName string) *Topic {
 
 	fmt.Printf("[ok] Topic is ready: %s.json\n", topicName)
 	return topic
+}
+
+func (b *Broker) GetOrCreateGroup(name string) *ConsumerGroup {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if g, ok := b.Groups[name]; ok {
+		return g
+	}
+
+	g := NewConsumerGroup(name)
+	b.Groups[name] = g
+	fmt.Printf("[info] Created consumer group: %s\n", name)
+	return g
+
 }
 
 func (b *Broker) Publish(topicName, msg string) Message {
