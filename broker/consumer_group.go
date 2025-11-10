@@ -24,33 +24,23 @@ func NewConsumerGroup(name string) *ConsumerGroup {
 	cg.LoadOffSets()
 	return cg
 }
-
 func (cg *ConsumerGroup) Consume(b *Broker, topicName string) ([]Message, error) {
 	cg.mu.Lock()
 	defer cg.mu.Unlock()
 
 	topic := b.GetOrCreateTopic(topicName)
-	topic.mu.Lock()
-	defer topic.mu.Unlock()
+	all := topic.GetAllMessages()
 
-	start := 0
-	if off, ok := cg.Offsets[topicName]; ok {
-		start = off
-	}
-	if start >= len(topic.Messages) {
+	offset := cg.Offsets[topicName]
+	if offset >= len(all) {
 		return []Message{}, nil
 	}
 
-	newMsgs := make([]Message, len(topic.Messages)-start)
-	copy(newMsgs, topic.Messages[start:])
+	newMsgs := all[offset:]
+	cg.Offsets[topicName] = len(all)
+	cg.SaveOffsets()
 
-	cg.Offsets[topicName] = len(topic.Messages)
-
-	if err := cg.SaveOffsets(); err != nil {
-		fmt.Printf("[warn] failed to save offsets for group %s: %v\n", cg.Name, err)
-	}
 	return newMsgs, nil
-
 }
 
 func (cg *ConsumerGroup) SaveOffsets() error {

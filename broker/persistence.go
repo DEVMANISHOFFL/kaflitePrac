@@ -9,13 +9,13 @@ import (
 
 const storageDir = "storage"
 
-func SaveMessages(topicName string, messages []Message) error {
-	if err := os.MkdirAll(storageDir, os.ModePerm); err != nil {
+func SavePartition(topicName string, partitionID int, messages []Message) error {
+	dir := filepath.Join(storageDir, topicName)
+	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
 		return fmt.Errorf("failed to create storage dir: %v", err)
 	}
 
-	filePath := filepath.Join(storageDir, topicName+".json")
-
+	filePath := filepath.Join(dir, fmt.Sprintf("partition-%d.json", partitionID))
 	data, err := json.MarshalIndent(messages, "", " ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal messages: %v", err)
@@ -27,21 +27,38 @@ func SaveMessages(topicName string, messages []Message) error {
 	return nil
 }
 
-func LoadMessage(topicName string) ([]Message, error) {
-	filePath := filepath.Join(storageDir, topicName+".json")
+func LoadPartitions(topicName string) (map[int][]Message, error) {
+	dir := filepath.Join(storageDir, topicName)
+	partitions := make(map[int][]Message)
 
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		return []Message{}, nil
-	}
-
-	data, err := os.ReadFile(filePath)
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %v", err)
+		if os.IsNotExist(err) {
+			return partitions, nil 
+		}
+		return nil, fmt.Errorf("failed to read dir: %v", err)
 	}
 
-	var messages []Message
-	if err := json.Unmarshal(data, &messages); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal messages: %v", err)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		var partID int
+		fmt.Sscanf(entry.Name(), "partition-%d.json", &partID)
+
+		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			fmt.Printf("[warn] failed to read %s: %v\n", entry.Name(), err)
+			continue
+		}
+
+		var msgs []Message
+		if err := json.Unmarshal(data, &msgs); err != nil {
+			fmt.Printf("[warn] failed to parse %s: %v\n", entry.Name(), err)
+			continue
+		}
+
+		partitions[partID] = msgs
 	}
-	return messages, nil
+	return partitions, nil
 }
