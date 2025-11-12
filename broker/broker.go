@@ -1,8 +1,10 @@
 package broker
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -19,13 +21,15 @@ func NewBroker() *Broker {
 		Groups: make(map[string]*ConsumerGroup),
 	}
 	b.LoadAllTopics()
+	b.LoadGroups()
+
 	return b
 }
 
 func (b *Broker) LoadAllTopics() {
 	entries, err := os.ReadDir(storageDir)
 	if err != nil {
-		fmt.Println("[error] failed to read storage dir:", err)
+		fmt.Println("[info] no storage found, skipping load", err)
 		return
 	}
 
@@ -99,4 +103,39 @@ func (b *Broker) ListTopics() []string {
 		names = append(names, n)
 	}
 	return names
+}
+
+func (b *Broker) LoadGroups() {
+	groupDir := filepath.Join(groupStorageDir)
+	entries, err := os.ReadDir(groupDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Println("[info] no saved consumer groups found")
+			return
+		}
+		fmt.Printf("[warn] failed to read consumer groups dir: %v\n", err)
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		filePath := filepath.Join(groupDir, entry.Name())
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			fmt.Printf("[warn] failed to read group file %s: %v\n", entry.Name(), err)
+			continue
+		}
+
+		var cg ConsumerGroup
+		if err := json.Unmarshal(data, &cg); err != nil {
+			fmt.Printf("[warn] failed to parse group file %s: %v\n", entry.Name(), err)
+			continue
+		}
+
+		b.Groups[cg.Name] = &cg
+		fmt.Printf("[info] loaded consumer group '%s' from disk\n", cg.Name)
+	}
 }

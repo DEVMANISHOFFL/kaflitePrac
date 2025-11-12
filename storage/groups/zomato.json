@@ -1,0 +1,30 @@
+{
+ "name": "zomato",
+ "offsets": {
+  "testing": {
+   "0": 1,
+   "1": 1,
+   "2": 1
+  }
+ },
+ "Consumers": {
+  "delivery-service": {
+   "Name": "delivery-service",
+   "Assignments": {
+    "testing": [
+     0,
+     1,
+     2
+    ]
+   }
+  },
+  "notification-service": {
+   "Name": "notification-service",
+   "Assignments": {
+    "testing": [
+     1
+    ]
+   }
+  }
+ }
+}

@@ -11,36 +11,108 @@ import (
 const groupStorageDir = "storage/groups"
 
 type ConsumerGroup struct {
-	Name    string         `json:"name"`
-	Offsets map[string]int `json:"offsets"`
-	mu      sync.Mutex
+	Name      string                 `json:"name"`
+	Offsets   map[string]map[int]int `json:"offsets"`
+	Consumers map[string]*Consumer
+	mu        sync.Mutex
+}
+
+type Consumer struct {
+	Name        string
+	Assignments map[string][]int
 }
 
 func NewConsumerGroup(name string) *ConsumerGroup {
 	cg := &ConsumerGroup{
-		Name:    name,
-		Offsets: make(map[string]int),
+		Name:      name,
+		Offsets:   make(map[string]map[int]int),
+		Consumers: make(map[string]*Consumer),
 	}
 	cg.LoadOffSets()
 	return cg
 }
-func (cg *ConsumerGroup) Consume(b *Broker, topicName string) ([]Message, error) {
+
+func (cg *ConsumerGroup) AddConsumer(consumerName string, topic *Topic) {
+	cg.mu.Lock()
+	defer cg.mu.Unlock()
+
+	if cg.Consumers == nil {
+		cg.Consumers = make(map[string]*Consumer)
+	}
+
+	if _, exists := cg.Consumers[consumerName]; exists {
+		fmt.Printf("[info] consumer '%s' already exists in group '%s'\n", consumerName, cg.Name)
+		return
+	}
+	totalConsumers := len(cg.Consumers) + 1
+	assignments := make(map[string][]int)
+	for i, p := range topic.Partitions {
+		if i%totalConsumers == len(cg.Consumers) {
+			assignments[topic.TopicName] = append(assignments[topic.TopicName], p.ID)
+		}
+	}
+
+	cg.Consumers[consumerName] = &Consumer{
+		Name:        consumerName,
+		Assignments: assignments,
+	}
+	fmt.Printf("[info] added consumer '%s' with partitions %+v\n", consumerName, assignments)
+}
+
+func (cg *ConsumerGroup) ConsumeAll(b *Broker, topicName string) ([]Message, error) {
 	cg.mu.Lock()
 	defer cg.mu.Unlock()
 
 	topic := b.GetOrCreateTopic(topicName)
-	all := topic.GetAllMessages()
 
-	offset := cg.Offsets[topicName]
-	if offset >= len(all) {
+	if cg.Offsets[topicName] == nil {
+		cg.Offsets[topicName] = make(map[int]int)
+	}
+
+	var newMsgs []Message
+	for _, part := range topic.Partitions {
+		all := part.GetMessages()
+		offset := cg.Offsets[topicName][part.ID]
+		if offset < len(all) {
+			newMsgs = append(newMsgs, all[offset:]...)
+			cg.Offsets[topicName][part.ID] = len(all)
+		}
+	}
+	cg.SaveOffsets()
+	return newMsgs, nil
+}
+
+func (cg *ConsumerGroup) ConsumeByConsumer(b *Broker, consumerName, topicName string) ([]Message, error) {
+	cg.mu.Lock()
+	defer cg.mu.Unlock()
+
+	consumer, ok := cg.Consumers[consumerName]
+	if !ok {
+		return nil, fmt.Errorf("consumer '%s' not found in group '%s'", consumerName, cg.Name)
+	}
+
+	topic := b.GetOrCreateTopic(topicName)
+	assignments := consumer.Assignments[topicName]
+	if len(assignments) == 0 {
 		return []Message{}, nil
 	}
 
-	newMsgs := all[offset:]
-	cg.Offsets[topicName] = len(all)
-	cg.SaveOffsets()
+	if cg.Offsets[topicName] == nil {
+		cg.Offsets[topicName] = make(map[int]int)
+	}
 
-	return newMsgs, nil
+	var msgs []Message
+	for _, partID := range assignments {
+		part := topic.Partitions[partID]
+		all := part.GetMessages()
+		offset := cg.Offsets[topicName][partID]
+		if offset < len(all) {
+			msgs = append(msgs, all[offset:]...)
+			cg.Offsets[topicName][partID] = len(all)
+		}
+	}
+	cg.SaveOffsets()
+	return msgs, nil
 }
 
 func (cg *ConsumerGroup) SaveOffsets() error {

@@ -24,7 +24,7 @@ func SavePartition(topicName string, partitionID int, messages []Message) error 
 	if err := os.WriteFile(filePath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write file: %v", err)
 	}
-	return nil
+	return nil	
 }
 
 func LoadPartitions(topicName string) (map[int][]Message, error) {
@@ -34,7 +34,7 @@ func LoadPartitions(topicName string) (map[int][]Message, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return partitions, nil 
+			return partitions, nil
 		}
 		return nil, fmt.Errorf("failed to read dir: %v", err)
 	}
